@@ -5,15 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pac-Man en grilla</title>
   <style>
-    body {
+    html, body {
       margin: 0;
+      height: 100%;
       background: #000;
     }
+    /* Centramos el canvas en la pantalla */
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
     canvas {
-      display: block;
-      margin: 0 auto;
       background: #000;
-      touch-action: none; /* Evita zoom y scroll en móviles */
+      touch-action: none; /* Evita zoom/scroll en móviles */
     }
   </style>
 </head>
