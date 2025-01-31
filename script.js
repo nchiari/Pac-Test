@@ -1,7 +1,7 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Diseño del nivel: cada fila es una cadena. 
+// Diseño del nivel: cada fila es una cadena.
 // '#' = pared; '.' = pellet; ' ' = espacio vacío.
 const levelDesign = [
   "####################",
@@ -36,9 +36,9 @@ let player = {
   row: 3,
   x: (10 + 0.5) * tileSize,
   y: (3 + 0.5) * tileSize,
-  currentDirection: null,  // Dirección que se está ejecutando
-  nextDirection: null,     // Dirección solicitada por el usuario
-  speed: tileSize / 16,    // Velocidad de desplazamiento
+  currentDirection: null,  // Dirección en ejecución
+  nextDirection: null,     // Dirección solicitada
+  speed: tileSize / 16,    // Velocidad de movimiento
   targetCol: 10,           // Celda destino
   targetRow: 3
 };
@@ -58,7 +58,7 @@ function createEnemy(col, row, color) {
     x: (col + 0.5) * tileSize,
     y: (row + 0.5) * tileSize,
     currentDirection: randomDir,
-    speed: tileSize / 20, // Los fantasmas se mueven un poco más lentos
+    speed: tileSize / 20, // Los fantasmas se mueven algo más lentos
     color: color,
     targetCol: col,
     targetRow: row
@@ -92,7 +92,7 @@ function drawGrid() {
   }
 }
 
-// Dibuja al jugador (Pac-Man) con "boca" abierta según la dirección.
+// Dibuja al jugador (Pac-Man) con "boca" según la dirección.
 function drawPlayer() {
   ctx.fillStyle = "yellow";
   ctx.beginPath();
@@ -144,7 +144,6 @@ function updatePlayer() {
   let centerY = (player.row + 0.5) * tileSize;
   let epsilon = 2;
   if (Math.abs(player.x - centerX) < epsilon && Math.abs(player.y - centerY) < epsilon) {
-    // Alineamos al centro de la celda.
     player.x = centerX;
     player.y = centerY;
     // Consumir pellet si hay.
@@ -160,7 +159,7 @@ function updatePlayer() {
       }
       player.nextDirection = null;
     }
-    // Verificar que la dirección actual sigue siendo válida.
+    // Verificar que la dirección actual siga siendo válida.
     if (player.currentDirection && !isValidCell(player.col + player.currentDirection.dx, player.row + player.currentDirection.dy)) {
       player.currentDirection = null;
     }
@@ -173,7 +172,7 @@ function updatePlayer() {
       player.targetRow = player.row;
     }
   }
-  // Si hay una dirección establecida, se interpola el movimiento hasta el centro de la celda destino.
+  // Interpolación hacia el centro de la celda destino.
   if (player.currentDirection) {
     let targetX = (player.targetCol + 0.5) * tileSize;
     let targetY = (player.targetRow + 0.5) * tileSize;
@@ -181,7 +180,6 @@ function updatePlayer() {
     let dy = targetY - player.y;
     let dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < player.speed) {
-      // Llegamos a la celda destino: actualizamos posición y celda actual.
       player.x = targetX;
       player.y = targetY;
       player.col = player.targetCol;
@@ -193,8 +191,7 @@ function updatePlayer() {
   }
 }
 
-// Movimiento de los enemigos con lógica similar al jugador.
-// Cuando el fantasma está centrado, se elige una nueva dirección (siempre verificando colisión).
+// Movimiento de los enemigos (fantasmas) con lógica similar.
 function updateEnemies() {
   enemies.forEach(enemy => {
     let centerX = (enemy.col + 0.5) * tileSize;
@@ -209,7 +206,6 @@ function updateEnemies() {
       for (let key in directions) {
         let d = directions[key];
         if (isValidCell(enemy.col + d.dx, enemy.row + d.dy)) {
-          // Evitar invertir la dirección actual.
           if (enemy.currentDirection && d.dx === -enemy.currentDirection.dx && d.dy === -enemy.currentDirection.dy)
             continue;
           possibleDirs.push(d);
@@ -270,7 +266,7 @@ function gameLoop() {
 }
 gameLoop();
 
-// Controles de teclado: sólo se aceptan las direcciones cardinales.
+// Controles de teclado: se aceptan solo direcciones cardinales.
 document.addEventListener("keydown", (e) => {
   let newDir = null;
   if (e.key === "ArrowUp") newDir = directions.up;
@@ -280,23 +276,43 @@ document.addEventListener("keydown", (e) => {
   if (newDir) player.nextDirection = newDir;
 });
 
-// Controles táctiles: se detecta el swipe para asignar la dirección.
-let touchStartX = null, touchStartY = null;
-canvas.addEventListener("touchstart", (e) => {
-  e.preventDefault();
-  touchStartX = e.touches[0].clientX;
-  touchStartY = e.touches[0].clientY;
-});
+// Controles táctiles según zonas.
+// Se asume pantalla vertical. Se divide el canvas en 3 filas: 
+// top: 20% de la altura, middle: 60%, bottom: 20%.
+// En la fila central se divide horizontalmente en 3 columnas iguales.
 canvas.addEventListener("touchend", (e) => {
   e.preventDefault();
-  if (touchStartX === null || touchStartY === null) return;
-  let touchEndX = e.changedTouches[0].clientX;
-  let touchEndY = e.changedTouches[0].clientY;
-  let diffX = touchEndX - touchStartX;
-  let diffY = touchEndY - touchStartY;
-  let newDir = Math.abs(diffX) > Math.abs(diffY)
-               ? (diffX > 0 ? directions.right : directions.left)
-               : (diffY > 0 ? directions.down : directions.up);
-  player.nextDirection = newDir;
-  touchStartX = touchStartY = null;
+  let touch = e.changedTouches[0];
+  let rect = canvas.getBoundingClientRect();
+  let touchX = touch.clientX - rect.left;
+  let touchY = touch.clientY - rect.top;
+  let width = canvas.width;
+  let height = canvas.height;
+  
+  // Definimos las zonas verticales.
+  let topZone = height * 0.2;
+  let bottomZone = height * 0.8;
+  
+  if (touchY < topZone) {
+    // Toca la zona superior: mover hacia arriba.
+    player.nextDirection = directions.up;
+  } else if (touchY > bottomZone) {
+    // Toca la zona inferior: mover hacia abajo.
+    player.nextDirection = directions.down;
+  } else {
+    // En la zona central: dividimos en 3 columnas.
+    if (touchX < width / 3) {
+      // Columna izquierda: mover a la izquierda.
+      player.nextDirection = directions.left;
+    } else if (touchX > (2 * width) / 3) {
+      // Columna derecha: mover a la derecha.
+      player.nextDirection = directions.right;
+    } else {
+      // Columna central: si se está moviendo, se frena.
+      if (player.currentDirection) {
+        player.currentDirection = null;
+        player.nextDirection = null;
+      }
+    }
+  }
 });
