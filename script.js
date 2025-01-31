@@ -1,169 +1,272 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Definición del jugador
-let player = {
-  x: 50,
-  y: 50,
-  radius: 15,
-  speed: 3,
-  dx: 0,
-  dy: 0
+// Diseño del nivel: cada string representa una fila de la grilla
+// '#' = pared; '.' = pellet; ' ' = espacio vacío
+const levelDesign = [
+  "####################",
+  "#........##........#",
+  "#.####.#.##.#.####.#",
+  "#.................#",
+  "#.####.#.##.#.####.#",
+  "#........##........#",
+  "####################"
+];
+
+// Convertir el diseño a una matriz modificable
+let grid = levelDesign.map(row => row.split(''));
+const rows = grid.length;
+const cols = grid[0].length;
+
+// Calcular el tamaño de cada celda según el dispositivo (para jugar en vertical o horizontal)
+let tileSize = Math.floor(Math.min(window.innerWidth / cols, window.innerHeight / rows));
+canvas.width = tileSize * cols;
+canvas.height = tileSize * rows;
+
+// Definición de direcciones cardinales con vector y ángulo para dibujar
+const directions = {
+  left:  { dx: -1, dy:  0, angle: Math.PI },
+  right: { dx:  1, dy:  0, angle: 0 },
+  up:    { dx:  0, dy: -1, angle: -Math.PI/2 },
+  down:  { dx:  0, dy:  1, angle: Math.PI/2 }
 };
 
-// Función para crear enemigos
-function createEnemy(x, y) {
+// Inicialización del jugador: lo ubicamos en la celda (1,1)
+let player = {
+  col: 1,
+  row: 1,
+  x: (1 + 0.5) * tileSize,
+  y: (1 + 0.5) * tileSize,
+  currentDirection: null,
+  nextDirection: null,
+  speed: tileSize / 8
+};
+
+let score = 0; // Podés usarlo para mostrar puntaje
+
+// Creación de enemigos (fantasmitas) con colores diferentes
+let ghostColors = ["red", "pink", "cyan", "orange"];
+let enemies = [];
+
+// Función para instanciar un enemigo en una celda dada
+function createEnemy(col, row, color) {
+  let dirKeys = Object.keys(directions);
+  let randomDir = directions[dirKeys[Math.floor(Math.random() * dirKeys.length)]];
   return {
-    x: x,
-    y: y,
-    radius: 15,
-    speed: 2,
-    dx: (Math.random() * 2 - 1) * 2,
-    dy: (Math.random() * 2 - 1) * 2
+    col: col,
+    row: row,
+    x: (col + 0.5) * tileSize,
+    y: (row + 0.5) * tileSize,
+    currentDirection: randomDir,
+    speed: tileSize / 8,
+    color: color
   };
 }
 
-// Generamos algunos enemigos
-let enemies = [];
-for (let i = 0; i < 4; i++) {
-  enemies.push(createEnemy(Math.random() * canvas.width, Math.random() * canvas.height));
-}
+// Ubicaciones iniciales de los fantasmas
+enemies.push(createEnemy(cols - 2, 1, ghostColors[0]));
+enemies.push(createEnemy(cols - 2, rows - 2, ghostColors[1]));
+enemies.push(createEnemy(1, rows - 2, ghostColors[2]));
+enemies.push(createEnemy(Math.floor(cols/2), Math.floor(rows/2), ghostColors[3]));
 
-// Manejo del teclado para mover al jugador
-document.addEventListener("keydown", keyDownHandler);
-document.addEventListener("keyup", keyUpHandler);
-
-function keyDownHandler(e) {
-  switch (e.key) {
-    case "ArrowUp":
-    case "w":
-      player.dy = -player.speed;
-      break;
-    case "ArrowDown":
-    case "s":
-      player.dy = player.speed;
-      break;
-    case "ArrowLeft":
-    case "a":
-      player.dx = -player.speed;
-      break;
-    case "ArrowRight":
-    case "d":
-      player.dx = player.speed;
-      break;
+// Dibujo de la grilla: paredes y pellets
+function drawGrid() {
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      let cell = grid[row][col];
+      let x = col * tileSize;
+      let y = row * tileSize;
+      if (cell === "#") {
+        ctx.fillStyle = "blue";
+        ctx.fillRect(x, y, tileSize, tileSize);
+      } else if (cell === ".") {
+        ctx.fillStyle = "white";
+        let pelletSize = tileSize / 8;
+        ctx.beginPath();
+        ctx.arc(x + tileSize/2, y + tileSize/2, pelletSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 }
 
-function keyUpHandler(e) {
-  switch (e.key) {
-    case "ArrowUp":
-    case "w":
-      if (player.dy < 0) player.dy = 0;
-      break;
-    case "ArrowDown":
-    case "s":
-      if (player.dy > 0) player.dy = 0;
-      break;
-    case "ArrowLeft":
-    case "a":
-      if (player.dx < 0) player.dx = 0;
-      break;
-    case "ArrowRight":
-    case "d":
-      if (player.dx > 0) player.dx = 0;
-      break;
-  }
-}
-
-// Manejo de eventos táctiles para móviles
-canvas.addEventListener("touchstart", handleTouch, false);
-canvas.addEventListener("touchmove", handleTouch, false);
-canvas.addEventListener("touchend", handleTouchEnd, false);
-
-function handleTouch(e) {
-  e.preventDefault();
-  let touch = e.touches[0];
-  let rect = canvas.getBoundingClientRect();
-  let touchX = touch.clientX - rect.left;
-  let touchY = touch.clientY - rect.top;
-  // Calculamos el ángulo desde el jugador hacia el punto de toque
-  let angle = Math.atan2(touchY - player.y, touchX - player.x);
-  player.dx = player.speed * Math.cos(angle);
-  player.dy = player.speed * Math.sin(angle);
-}
-
-function handleTouchEnd(e) {
-  e.preventDefault();
-  // Al levantar el dedo, detenemos al jugador
-  player.dx = 0;
-  player.dy = 0;
-}
-
-// Función principal de actualización y renderizado
-function update() {
-  // Limpiar canvas
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Actualizar posición del jugador
-  player.x += player.dx;
-  player.y += player.dy;
-
-  // Limitar al jugador dentro del canvas
-  if (player.x < player.radius) player.x = player.radius;
-  if (player.x > canvas.width - player.radius) player.x = canvas.width - player.radius;
-  if (player.y < player.radius) player.y = player.radius;
-  if (player.y > canvas.height - player.radius) player.y = canvas.height - player.radius;
-
-  // Dibujar jugador (forma simple de “pacman”)
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.radius, 0.25 * Math.PI, 1.75 * Math.PI, false);
-  ctx.lineTo(player.x, player.y);
+// Dibujo del jugador (Pac-Man). Se usa un arco con “boca” abierta según la dirección.
+function drawPlayer() {
   ctx.fillStyle = "yellow";
-  ctx.fill();
+  ctx.beginPath();
+  let dir = player.currentDirection || directions.right;
+  // Se dibuja un arco con un ángulo para simular la boca
+  let startAngle = dir.angle + 0.25;
+  let endAngle = dir.angle - 0.25;
+  ctx.moveTo(player.x, player.y);
+  ctx.arc(player.x, player.y, tileSize * 0.4, startAngle, endAngle, false);
   ctx.closePath();
+  ctx.fill();
+}
 
-  // Actualizar y dibujar enemigos
+// Dibujo de un fantasmita usando una forma simple
+function drawGhost(enemy) {
+  let x = enemy.x;
+  let y = enemy.y;
+  let size = tileSize * 0.8;
+  ctx.fillStyle = enemy.color;
+  ctx.beginPath();
+  // Cabeza: un semicírculo
+  ctx.arc(x, y - size * 0.15, size / 2, Math.PI, 0, false);
+  // Cuerpo: parte inferior con “pies” alternos
+  ctx.lineTo(x + size/2, y + size/2);
+  ctx.lineTo(x + size/3, y + size/2 - size * 0.15);
+  ctx.lineTo(x + size/6, y + size/2);
+  ctx.lineTo(x, y + size/2 - size * 0.15);
+  ctx.lineTo(x - size/6, y + size/2);
+  ctx.lineTo(x - size/3, y + size/2 - size * 0.15);
+  ctx.lineTo(x - size/2, y + size/2);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Función que verifica si una celda (col, row) es transitable (no es pared)
+function isValidCell(col, row) {
+  if (row < 0 || row >= rows || col < 0 || col >= cols) return false;
+  return grid[row][col] !== "#";
+}
+
+// Actualiza la posición del jugador en base a su dirección y colisiones con la grilla
+function updatePlayer() {
+  // Cuando esté centrado en la celda, puede cambiar de dirección y comer pellet
+  let centerX = (player.col + 0.5) * tileSize;
+  let centerY = (player.row + 0.5) * tileSize;
+  let epsilon = 2;
+  if (Math.abs(player.x - centerX) < epsilon && Math.abs(player.y - centerY) < epsilon) {
+    player.x = centerX;
+    player.y = centerY;
+    player.col = Math.floor(player.x / tileSize);
+    player.row = Math.floor(player.y / tileSize);
+    // Comer pellet
+    if (grid[player.row][player.col] === ".") {
+      grid[player.row][player.col] = " ";
+      score += 10;
+      // Podés agregar aquí actualización de marcador, etc.
+    }
+    // Si se pidió cambiar de dirección y es válida, se actualiza
+    if (player.nextDirection) {
+      let nd = player.nextDirection;
+      let newCol = player.col + nd.dx;
+      let newRow = player.row + nd.dy;
+      if (isValidCell(newCol, newRow)) {
+        player.currentDirection = nd;
+      }
+      player.nextDirection = null;
+    }
+    // Si la dirección actual quedó bloqueada, se para
+    if (player.currentDirection) {
+      let newCol = player.col + player.currentDirection.dx;
+      let newRow = player.row + player.currentDirection.dy;
+      if (!isValidCell(newCol, newRow)) {
+        player.currentDirection = null;
+      }
+    }
+  }
+  // Mover al jugador si tiene una dirección asignada
+  if (player.currentDirection) {
+    player.x += player.currentDirection.dx * player.speed;
+    player.y += player.currentDirection.dy * player.speed;
+  }
+}
+
+// Actualiza el movimiento de los enemigos (fantasmitas)
+// Cuando están centrados en una celda, eligen su próxima dirección.
+// Si el jugador está cerca (dentro de cierto umbral en celdas) eligen perseguirlo (mínima distancia Manhattan); sino, se mueven al azar.
+function updateEnemies() {
   enemies.forEach(enemy => {
-    // Calcular distancia entre enemigo y jugador
-    let dx = player.x - enemy.x;
-    let dy = player.y - enemy.y;
-    let distance = Math.sqrt(dx * dx + dy * dy);
-
-    // Si el jugador está cerca, el enemigo lo persigue
-    if (distance < 150) {
-      let norm = Math.sqrt(dx * dx + dy * dy);
-      if (norm > 0) {
-        enemy.dx = (dx / norm) * enemy.speed;
-        enemy.dy = (dy / norm) * enemy.speed;
+    let centerX = (enemy.col + 0.5) * tileSize;
+    let centerY = (enemy.row + 0.5) * tileSize;
+    let epsilon = 2;
+    if (Math.abs(enemy.x - centerX) < epsilon && Math.abs(enemy.y - centerY) < epsilon) {
+      enemy.x = centerX;
+      enemy.y = centerY;
+      enemy.col = Math.floor(enemy.x / tileSize);
+      enemy.row = Math.floor(enemy.y / tileSize);
+      let possibleDirs = [];
+      for (let key in directions) {
+        let d = directions[key];
+        let newCol = enemy.col + d.dx;
+        let newRow = enemy.row + d.dy;
+        if (isValidCell(newCol, newRow)) {
+          // Evitar invertir la dirección actual
+          if (enemy.currentDirection && (d.dx === -enemy.currentDirection.dx && d.dy === -enemy.currentDirection.dy)) {
+            continue;
+          }
+          possibleDirs.push(d);
+        }
       }
-    } else {
-      // Si no, el enemigo se mueve al azar y cambia de dirección de vez en cuando
-      if (Math.random() < 0.01) {
-        enemy.dx = (Math.random() * 2 - 1) * enemy.speed;
-        enemy.dy = (Math.random() * 2 - 1) * enemy.speed;
+      // Si el jugador está cerca (por ejemplo, a 5 celdas de distancia), perseguirlo
+      let dx = player.col - enemy.col;
+      let dy = player.row - enemy.row;
+      let distance = Math.sqrt(dx * dx + dy * dy);
+      let chaseThreshold = 5;
+      if (distance <= chaseThreshold && possibleDirs.length > 0) {
+        possibleDirs.sort((a, b) => {
+          let distA = Math.abs((enemy.col + a.dx) - player.col) + Math.abs((enemy.row + a.dy) - player.row);
+          let distB = Math.abs((enemy.col + b.dx) - player.col) + Math.abs((enemy.row + b.dy) - player.row);
+          return distA - distB;
+        });
+        enemy.currentDirection = possibleDirs[0];
+      } else if (possibleDirs.length > 0) {
+        enemy.currentDirection = possibleDirs[Math.floor(Math.random() * possibleDirs.length)];
+      } else {
+        enemy.currentDirection = { dx: 0, dy: 0, angle: 0 };
       }
     }
-
-    enemy.x += enemy.dx;
-    enemy.y += enemy.dy;
-
-    // Rebote en los límites del canvas
-    if (enemy.x < enemy.radius || enemy.x > canvas.width - enemy.radius) {
-      enemy.dx = -enemy.dx;
-    }
-    if (enemy.y < enemy.radius || enemy.y > canvas.height - enemy.radius) {
-      enemy.dy = -enemy.dy;
-    }
-
-    // Dibujar enemigo (círculo rojo)
-    ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
-    ctx.fillStyle = "red";
-    ctx.fill();
-    ctx.closePath();
+    enemy.x += enemy.currentDirection.dx * enemy.speed;
+    enemy.y += enemy.currentDirection.dy * enemy.speed;
   });
+}
 
+// Ciclo principal de actualización y renderizado
+function update() {
+  updatePlayer();
+  updateEnemies();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGrid();
+  drawPlayer();
+  enemies.forEach(enemy => drawGhost(enemy));
   requestAnimationFrame(update);
 }
-
 update();
+
+// Controles de teclado: sólo se asigna dirección cardinal (sin diagonales)
+document.addEventListener("keydown", (e) => {
+  let newDir = null;
+  if (e.key === "ArrowUp") newDir = directions.up;
+  else if (e.key === "ArrowDown") newDir = directions.down;
+  else if (e.key === "ArrowLeft") newDir = directions.left;
+  else if (e.key === "ArrowRight") newDir = directions.right;
+  if (newDir) player.nextDirection = newDir;
+});
+
+// Controles táctiles: se detecta el swipe para determinar la dirección predominante
+let touchStartX = null;
+let touchStartY = null;
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+});
+canvas.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  if (touchStartX === null || touchStartY === null) return;
+  let touchEndX = e.changedTouches[0].clientX;
+  let touchEndY = e.changedTouches[0].clientY;
+  let diffX = touchEndX - touchStartX;
+  let diffY = touchEndY - touchStartY;
+  let newDir = null;
+  if (Math.abs(diffX) > Math.abs(diffY)) {
+    newDir = diffX > 0 ? directions.right : directions.left;
+  } else {
+    newDir = diffY > 0 ? directions.down : directions.up;
+  }
+  player.nextDirection = newDir;
+  touchStartX = null;
+  touchStartY = null;
+});
