@@ -1,8 +1,8 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// Diseño del nivel: cada string representa una fila de la grilla
-// '#' = pared; '.' = pellet; ' ' = espacio vacío
+// Diseño del nivel: cada fila es una cadena. 
+// '#' = pared; '.' = pellet; ' ' = espacio vacío.
 const levelDesign = [
   "####################",
   "#........##........#",
@@ -13,17 +13,16 @@ const levelDesign = [
   "####################"
 ];
 
-// Convertimos el diseño a una matriz de caracteres
 const grid = levelDesign.map(row => row.split(''));
 const rows = grid.length;
 const cols = grid[0].length;
 
-// Calcular tileSize según la pantalla (se adapta para vertical/horizontal)
+// Se calcula el tamaño de cada celda según la pantalla.
 let tileSize = Math.floor(Math.min(window.innerWidth / cols, window.innerHeight / rows));
 canvas.width = tileSize * cols;
 canvas.height = tileSize * rows;
 
-// Definición de direcciones (solo cardinales)
+// Direcciones cardinales (sin diagonales) con vector y ángulo para dibujar.
 const directions = {
   left:  { dx: -1, dy:  0, angle: Math.PI },
   right: { dx:  1, dy:  0, angle: 0 },
@@ -31,25 +30,26 @@ const directions = {
   down:  { dx:  0, dy:  1, angle: Math.PI/2 }
 };
 
-// El jugador se ubica en la celda (10,3)
+// El jugador se posiciona en la celda (10,3)
 let player = {
   col: 10,
   row: 3,
   x: (10 + 0.5) * tileSize,
   y: (3 + 0.5) * tileSize,
-  currentDirection: null,
-  nextDirection: null,
-  speed: tileSize / 16  // Movimiento más lento
+  currentDirection: null,  // Dirección que se está ejecutando
+  nextDirection: null,     // Dirección solicitada por el usuario
+  speed: tileSize / 16,    // Velocidad de desplazamiento
+  targetCol: 10,           // Celda destino
+  targetRow: 3
 };
 
 let score = 0;
 
-// Creación de enemigos (fantasmitas) con colores distintos
+// Creación de fantasmas con colores distintos.
 const ghostColors = ["red", "pink", "cyan", "orange"];
 let enemies = [];
 
 function createEnemy(col, row, color) {
-  // Selecciona una dirección aleatoria
   let dirKeys = Object.keys(directions);
   let randomDir = directions[dirKeys[Math.floor(Math.random() * dirKeys.length)]];
   return {
@@ -59,17 +59,19 @@ function createEnemy(col, row, color) {
     y: (row + 0.5) * tileSize,
     currentDirection: randomDir,
     speed: tileSize / 20, // Los fantasmas se mueven un poco más lentos
-    color: color
+    color: color,
+    targetCol: col,
+    targetRow: row
   };
 }
 
-// Ubicaciones iniciales en las esquinas
+// Ubicaciones iniciales: en cada esquina.
 enemies.push(createEnemy(cols - 2, 1, ghostColors[0]));       // esquina superior derecha
 enemies.push(createEnemy(cols - 2, rows - 2, ghostColors[1]));  // esquina inferior derecha
 enemies.push(createEnemy(1, rows - 2, ghostColors[2]));         // esquina inferior izquierda
 enemies.push(createEnemy(1, 1, ghostColors[3]));                // esquina superior izquierda
 
-// Dibuja la grilla: paredes y pellets
+// Dibuja la grilla con paredes y pellets.
 function drawGrid() {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -90,7 +92,7 @@ function drawGrid() {
   }
 }
 
-// Dibuja al jugador (Pac-Man) con "boca" según la dirección
+// Dibuja al jugador (Pac-Man) con "boca" abierta según la dirección.
 function drawPlayer() {
   ctx.fillStyle = "yellow";
   ctx.beginPath();
@@ -103,7 +105,7 @@ function drawPlayer() {
   ctx.fill();
 }
 
-// Dibuja un fantasma con forma característica (cabeza semicírculo y "pies" ondulados)
+// Dibuja un fantasma con forma característica (cabeza semicircular y pies ondulados).
 function drawGhost(enemy) {
   const x = enemy.x;
   const y = enemy.y;
@@ -111,16 +113,15 @@ function drawGhost(enemy) {
   const radius = size / 2;
   ctx.fillStyle = enemy.color;
   ctx.beginPath();
-  // Cabeza: semicírculo
+  // Cabeza: semicírculo.
   ctx.arc(x, y - radius * 0.3, radius, Math.PI, 0, false);
-  // Cuerpo: línea hacia la esquina derecha
+  // Cuerpo: línea hacia la esquina derecha.
   ctx.lineTo(x + radius, y + radius);
-  // Dibujar "pies" con ondas (3 picos)
+  // Dibujar “pies” con ondas (3 picos).
   const waveCount = 3;
   const waveWidth = (2 * radius) / waveCount;
   for (let i = 0; i < waveCount; i++) {
     let cx = x + radius - waveWidth * (i + 0.5);
-    // Se alterna la altura para generar el efecto ondulado
     let cy = y + radius + (i % 2 === 0 ? 5 : -5);
     ctx.quadraticCurveTo(cx, cy, x + radius - waveWidth * (i + 1), y + radius);
   }
@@ -129,33 +130,29 @@ function drawGhost(enemy) {
   ctx.fill();
 }
 
-// Verifica si la celda (col, row) es transitable (no es pared)
+// Retorna true si la celda (col, row) es transitable (no es pared).
 function isValidCell(col, row) {
   if (row < 0 || row >= rows || col < 0 || col >= cols) return false;
   return grid[row][col] !== "#";
 }
 
-// Actualiza el movimiento del jugador
+// Movimiento del jugador basado en celdas.
+// Si el jugador está centrado en su celda (dentro de un epsilon),
+// se verifica la dirección solicitada y se fija la celda destino.
 function updatePlayer() {
-  // Determina la celda actual según el centro del jugador
-  let currentCol = Math.floor(player.x / tileSize);
-  let currentRow = Math.floor(player.y / tileSize);
-  
-  // Consumo continuo del pellet de la celda donde se encuentra el centro
-  if (grid[currentRow][currentCol] === ".") {
-    grid[currentRow][currentCol] = " ";
-    score += 10;
-  }
-  
-  // Si el jugador está centrado en la celda (con un margen pequeño), se "ajusta" al centro
-  let centerX = (currentCol + 0.5) * tileSize;
-  let centerY = (currentRow + 0.5) * tileSize;
-  if (Math.abs(player.x - centerX) < 1 && Math.abs(player.y - centerY) < 1) {
+  let centerX = (player.col + 0.5) * tileSize;
+  let centerY = (player.row + 0.5) * tileSize;
+  let epsilon = 2;
+  if (Math.abs(player.x - centerX) < epsilon && Math.abs(player.y - centerY) < epsilon) {
+    // Alineamos al centro de la celda.
     player.x = centerX;
     player.y = centerY;
-    player.col = currentCol;
-    player.row = currentRow;
-    // Si hay dirección en cola, se intenta cambiar
+    // Consumir pellet si hay.
+    if (grid[player.row][player.col] === ".") {
+      grid[player.row][player.col] = " ";
+      score += 10;
+    }
+    // Si hay dirección pendiente, se intenta cambiar.
     if (player.nextDirection) {
       let nd = player.nextDirection;
       if (isValidCell(player.col + nd.dx, player.row + nd.dy)) {
@@ -163,72 +160,105 @@ function updatePlayer() {
       }
       player.nextDirection = null;
     }
-    // Si la dirección actual está bloqueada, se detiene
+    // Verificar que la dirección actual sigue siendo válida.
+    if (player.currentDirection && !isValidCell(player.col + player.currentDirection.dx, player.row + player.currentDirection.dy)) {
+      player.currentDirection = null;
+    }
+    // Definir la celda destino.
     if (player.currentDirection) {
-      if (!isValidCell(player.col + player.currentDirection.dx, player.row + player.currentDirection.dy)) {
-        player.currentDirection = null;
-      }
+      player.targetCol = player.col + player.currentDirection.dx;
+      player.targetRow = player.row + player.currentDirection.dy;
+    } else {
+      player.targetCol = player.col;
+      player.targetRow = player.row;
     }
   }
-  
-  // Si hay dirección asignada, se mueve
+  // Si hay una dirección establecida, se interpola el movimiento hasta el centro de la celda destino.
   if (player.currentDirection) {
-    player.x += player.currentDirection.dx * player.speed;
-    player.y += player.currentDirection.dy * player.speed;
+    let targetX = (player.targetCol + 0.5) * tileSize;
+    let targetY = (player.targetRow + 0.5) * tileSize;
+    let dx = targetX - player.x;
+    let dy = targetY - player.y;
+    let dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < player.speed) {
+      // Llegamos a la celda destino: actualizamos posición y celda actual.
+      player.x = targetX;
+      player.y = targetY;
+      player.col = player.targetCol;
+      player.row = player.targetRow;
+    } else {
+      player.x += (dx / dist) * player.speed;
+      player.y += (dy / dist) * player.speed;
+    }
   }
 }
 
-// Actualiza el movimiento de los enemigos
+// Movimiento de los enemigos con lógica similar al jugador.
+// Cuando el fantasma está centrado, se elige una nueva dirección (siempre verificando colisión).
 function updateEnemies() {
   enemies.forEach(enemy => {
-    // Se determina la celda en la que se encuentra el fantasma
-    let currentCol = Math.floor(enemy.x / tileSize);
-    let currentRow = Math.floor(enemy.y / tileSize);
-    let centerX = (currentCol + 0.5) * tileSize;
-    let centerY = (currentRow + 0.5) * tileSize;
-    
-    if (Math.abs(enemy.x - centerX) < 1 && Math.abs(enemy.y - centerY) < 1) {
+    let centerX = (enemy.col + 0.5) * tileSize;
+    let centerY = (enemy.row + 0.5) * tileSize;
+    let epsilon = 2;
+    if (Math.abs(enemy.x - centerX) < epsilon && Math.abs(enemy.y - centerY) < epsilon) {
       enemy.x = centerX;
       enemy.y = centerY;
-      enemy.col = currentCol;
-      enemy.row = currentRow;
+      enemy.col = Math.floor(enemy.x / tileSize);
+      enemy.row = Math.floor(enemy.y / tileSize);
       let possibleDirs = [];
       for (let key in directions) {
         let d = directions[key];
-        let newCol = enemy.col + d.dx;
-        let newRow = enemy.row + d.dy;
-        if (isValidCell(newCol, newRow)) {
-          // Evita invertir la dirección actual
-          if (enemy.currentDirection && d.dx === -enemy.currentDirection.dx && d.dy === -enemy.currentDirection.dy) {
+        if (isValidCell(enemy.col + d.dx, enemy.row + d.dy)) {
+          // Evitar invertir la dirección actual.
+          if (enemy.currentDirection && d.dx === -enemy.currentDirection.dx && d.dy === -enemy.currentDirection.dy)
             continue;
-          }
           possibleDirs.push(d);
         }
       }
-      // Si el jugador está cerca (umbral de 5 celdas), se persigue
+      // Si el jugador está cercano (umbral de 5 celdas), se persigue.
       let dx = player.col - enemy.col;
       let dy = player.row - enemy.row;
-      let distance = Math.abs(dx) + Math.abs(dy);
-      if (distance <= 5 && possibleDirs.length > 0) {
+      let manhattan = Math.abs(dx) + Math.abs(dy);
+      if (manhattan <= 5 && possibleDirs.length > 0) {
         possibleDirs.sort((a, b) => {
-          let distA = Math.abs((enemy.col + a.dx) - player.col) + Math.abs((enemy.row + a.dy) - player.row);
-          let distB = Math.abs((enemy.col + b.dx) - player.col) + Math.abs((enemy.row + b.dy) - player.row);
-          return distA - distB;
+          let da = Math.abs((enemy.col + a.dx) - player.col) + Math.abs((enemy.row + a.dy) - player.row);
+          let db = Math.abs((enemy.col + b.dx) - player.col) + Math.abs((enemy.row + b.dy) - player.row);
+          return da - db;
         });
         enemy.currentDirection = possibleDirs[0];
       } else if (possibleDirs.length > 0) {
         enemy.currentDirection = possibleDirs[Math.floor(Math.random() * possibleDirs.length)];
       } else {
-        enemy.currentDirection = { dx: 0, dy: 0, angle: 0 };
+        enemy.currentDirection = null;
+      }
+      if (enemy.currentDirection) {
+        enemy.targetCol = enemy.col + enemy.currentDirection.dx;
+        enemy.targetRow = enemy.row + enemy.currentDirection.dy;
+      } else {
+        enemy.targetCol = enemy.col;
+        enemy.targetRow = enemy.row;
       }
     }
-    // Movimiento con velocidad más lenta
-    enemy.x += enemy.currentDirection.dx * enemy.speed;
-    enemy.y += enemy.currentDirection.dy * enemy.speed;
+    if (enemy.currentDirection) {
+      let targetX = (enemy.targetCol + 0.5) * tileSize;
+      let targetY = (enemy.targetRow + 0.5) * tileSize;
+      let dx = targetX - enemy.x;
+      let dy = targetY - enemy.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < enemy.speed) {
+        enemy.x = targetX;
+        enemy.y = targetY;
+        enemy.col = enemy.targetCol;
+        enemy.row = enemy.targetRow;
+      } else {
+        enemy.x += (dx / dist) * enemy.speed;
+        enemy.y += (dy / dist) * enemy.speed;
+      }
+    }
   });
 }
 
-// Ciclo principal: actualización y renderizado
+// Bucle principal: actualiza y dibuja en cada frame.
 function gameLoop() {
   updatePlayer();
   updateEnemies();
@@ -240,7 +270,7 @@ function gameLoop() {
 }
 gameLoop();
 
-// Controles de teclado: solo se aceptan direcciones cardinales
+// Controles de teclado: sólo se aceptan las direcciones cardinales.
 document.addEventListener("keydown", (e) => {
   let newDir = null;
   if (e.key === "ArrowUp") newDir = directions.up;
@@ -250,9 +280,8 @@ document.addEventListener("keydown", (e) => {
   if (newDir) player.nextDirection = newDir;
 });
 
-// Controles táctiles: se detecta swipe para asignar la dirección
-let touchStartX = null;
-let touchStartY = null;
+// Controles táctiles: se detecta el swipe para asignar la dirección.
+let touchStartX = null, touchStartY = null;
 canvas.addEventListener("touchstart", (e) => {
   e.preventDefault();
   touchStartX = e.touches[0].clientX;
@@ -265,13 +294,9 @@ canvas.addEventListener("touchend", (e) => {
   let touchEndY = e.changedTouches[0].clientY;
   let diffX = touchEndX - touchStartX;
   let diffY = touchEndY - touchStartY;
-  let newDir = null;
-  if (Math.abs(diffX) > Math.abs(diffY)) {
-    newDir = diffX > 0 ? directions.right : directions.left;
-  } else {
-    newDir = diffY > 0 ? directions.down : directions.up;
-  }
+  let newDir = Math.abs(diffX) > Math.abs(diffY)
+               ? (diffX > 0 ? directions.right : directions.left)
+               : (diffY > 0 ? directions.down : directions.up);
   player.nextDirection = newDir;
-  touchStartX = null;
-  touchStartY = null;
+  touchStartX = touchStartY = null;
 });
